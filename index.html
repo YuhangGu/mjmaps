@@ -1,12 +1,27 @@
+<!-- https://yuhanggu.github.io/mjmaps/  -->
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>My GitHub Page</title>
+    <meta charset="utf-8">
+    <title>My first three.js app</title>
+
+    <script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
+    <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
+
+    <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@v0.154.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@v0.154.0/examples/jsm/"
+    }
+  }
+    </script>
+    <link rel="stylesheet" type="text/css" href="style.css">
 </head>
 <body>
-  <h1>Welcome to My GitHub Page</h1>
-  <p>This is a simple webpage hosted using GitHub Pages!</p>
+<script type="module" src="spacetimecube.js"></script>
 </body>
 </html>

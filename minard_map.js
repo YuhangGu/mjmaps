@@ -208,9 +208,9 @@ async function initialize() {
 
     createMap();
 
-    createFlows_arc();
+    //createFlows_arc();
 
-    //createFlows_STC();
+    createFlows_STC();
 
     //createFlows_3DWall();
 
@@ -1167,7 +1167,7 @@ function updateVisualizationMethods(selectedMethod) {
     } else if (selectedMethod == "wall") {
         createFlows_3DWall();
     } else if (selectedMethod == "arcs") {
-        createFlows_STC();
+        createFlows_arc();
     }
 }
 

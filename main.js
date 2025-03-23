@@ -5,7 +5,6 @@ import { CSS3DRenderer , CSS3DObject } from 'three/addons/renderers/CSS3DRendere
 import { TrackballControls } from 'three/addons/controls/TrackballControls.js';
 
 
-
 // initial elements of the 3D scene
 var controls, camera, glScene, cssScene, glRenderer, cssRenderer;
 var theMap = null;

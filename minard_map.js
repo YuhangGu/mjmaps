@@ -35,7 +35,7 @@ let globalThicknessScale = null;
 let globalZAxisScale = null;
 let corpsNameList = null;
 // visual variables
-
+let formatDate = d3.timeFormat("%Y-%m-%d");
 
 // 3D flow scene
 let meshes = [];
@@ -134,7 +134,24 @@ async function initialize() {
 
     await readFlowsData().then((data) => {
         //data.map(d=>flowData.push(d));
-        globalFLowsData = data;
+
+        /*
+        data.forEach(flow => {
+            for(var i=0; i<flow.length-1;i++) {
+
+                if(flow[i].attributes.DATA > flow[i+1].attributes.DATA){
+                    console.log(i, formatDate (flow[i].attributes.DATA), formatDate(flow[i+1].attributes.DATA) )
+                }
+            }
+        })
+
+         */
+
+        globalFLowsData = data.map(function (flow){
+            return flow.sort((a, b) => d3.ascending(new Date(a.attributes.DATA), new Date(b.attributes.DATA)))
+        });
+
+        console.log("globalFLowsData",globalFLowsData);
         initLayerControls();
     })
 
@@ -172,9 +189,8 @@ async function initialize() {
                 .text(d.name);
         });
 
-        console.log("corpsNameList", corpsNameList);
+        //console.log("corpsNameList", corpsNameList);
         // 图层控制
-
 
         layersData.forEach((d, i) => {
             var checkboxID = "checkbox-" + i;
@@ -196,6 +212,7 @@ async function initialize() {
     }
 
     //console.log("globalFLowsData",globalFLowsData);
+
 
     globalColorScale = d3.scaleLinear().domain(globalTemperatureRange).range(["blue", "red"]);
 
@@ -280,7 +297,6 @@ async function initialize() {
     });
 
 }
-
 
 function createGlRenderer() {
     var glRenderer = new THREE.WebGLRenderer({alpha: true});
@@ -486,9 +502,11 @@ async function readFlowsData() {
     }
 
     async function reformatData() {
+
         const getdata = allData.map(function (d) {
             return d.features
         })
+
 
         flowsList = getdata;
 
@@ -500,7 +518,7 @@ async function readFlowsData() {
             await loadFiles();  // 等待异步任务完成;
             await reformatData();
 
-            await loadIcelandGeoData();
+            //await loadIcelandGeoData();
             //console.log("flowsList",flowsList);
             //console.log(flowsList);
 
@@ -518,8 +536,6 @@ async function readFlowsData() {
 
             //console.log("maxSoldiers",maxSoldiers,"minSoldiers",minSoldiers);
             //`ture",maxTemperature,"minTemperature",minTemperature);
-
-            const formatDate = d3.timeFormat("%Y-%m-%d");
             //console.log("newestDate",formatDate(new Date(maxDate)),"oldestDate",formatDate(new Date(minDate)));
 
             globalTimeRange = [minDate, maxDate];
@@ -533,7 +549,6 @@ async function readFlowsData() {
 
     await processFlowData();
 
-
     async function loadIcelandGeoData(callback) {
 
         const data = await d3.json("data/icelandgeo.json");
@@ -542,8 +557,6 @@ async function readFlowsData() {
         })
 
     }
-
-
     return Promise.resolve(flowsList);
 
 }
@@ -1071,12 +1084,11 @@ async function createFlows_arc() {
 
 }
 
-
 function resetLayerControls(switchCheckbox) {
     if (switchCheckbox) {
         globalFLowsData.forEach((d, i) => {
             var checkboxID = "#checkbox-" + i;
-            console.log("checkboxID",checkboxID);
+            //console.log("checkboxID",checkboxID);
             d3.select(checkboxID).property('checked', true);
             camera.layers.enable(i + 1);
         })
@@ -1090,7 +1102,6 @@ function resetLayerControls(switchCheckbox) {
         })
     }
 }
-
 
 async function createFlows_Old() {
 

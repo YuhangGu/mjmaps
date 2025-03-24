@@ -151,7 +151,7 @@ async function initialize() {
             return flow.sort((a, b) => d3.ascending(new Date(a.attributes.DATA), new Date(b.attributes.DATA)))
         });
 
-        console.log("globalFLowsData",globalFLowsData);
+        //console.log("globalFLowsData",globalFLowsData);
         initLayerControls();
     })
 

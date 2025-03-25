@@ -34,11 +34,30 @@ let globalColorScale = null;
 let globalThicknessScale = null;
 let globalZAxisScale = null;
 let corpsNameList = null;
+
+let globalDivers_ColorScale = d3.scaleOrdinal()
+    .domain(d3.range(17))  // 17 个类别
+    .range(d3.schemeSet3.concat([
+        "#ff0000", "#ff7f00",
+        "#ffff00", "#7fff00", "#3322d2"  // 额外补充 5 种颜色
+    ]));
+
 // visual variables
 let formatDate = d3.timeFormat("%Y-%m-%d");
+let formatYear = d3.timeFormat("%Y");
 
 // 3D flow scene
 let meshes = [];
+
+//time
+let globaleDateList = null;
+let objects = [];
+let isPlaying = false;
+let currentDate = new Date(1812, 0, 1);
+let startDate = null;
+let endDate = null;
+let totalDays = null;
+
 
 let dataIcelandGeo = [];
 let graphics3D = {
@@ -83,48 +102,66 @@ let graphics3D = {
     //centerMap: d3.map()
 }
 
+
 initialize();
 
 async function initialize() {
 
-    //-------------create 3D scene
-    camera = new THREE.PerspectiveCamera(60, 0.85 * window.innerWidth / window.innerHeight, 0.1, 10000);
-    camera.position.set(0, -3000, 3500)
-    glRenderer = createGlRenderer();
-    cssRenderer = createCssRenderer();
-    //document.body.appendChild(glRenderer.domElement);
+    initialize3DScene()
 
-    document.getElementById("scene-container").appendChild(cssRenderer.domElement);
-    //document.body.appendChild(cssRenderer.domElement);
-    cssRenderer.domElement.appendChild(glRenderer.domElement);
-    cssRenderer.setSize(window.innerWidth * 0.85, window.innerHeight);
-    glRenderer.setSize(window.innerWidth * 0.85, window.innerHeight);
+    function initialize3DScene(){
 
-    glScene = new THREE.Scene();
-    cssScene = new THREE.Scene();
+        //-------------create 3D scene-------------
+        camera = new THREE.PerspectiveCamera(60, 0.85 * window.innerWidth / window.innerHeight, 0.1, 10000);
+        camera.position.set(0, -3000, 3500)
+        glRenderer = createGlRenderer();
+        cssRenderer = createCssRenderer();
+        //document.body.appendChild(glRenderer.domElement);
 
-    //-------------create lights
-    var ambientLight = new THREE.AmbientLight(0x555555);
-    glScene.add(ambientLight);
-    var directionalLight = new THREE.DirectionalLight(0xffffff);
-    directionalLight.position.set(1000, -2, 10).normalize();
-    glScene.add(directionalLight);
+        document.getElementById("scene-container").appendChild(cssRenderer.domElement);
+        //document.body.appendChild(cssRenderer.domElement);
+        cssRenderer.domElement.appendChild(glRenderer.domElement);
+        cssRenderer.setSize(window.innerWidth * 0.85, window.innerHeight);
+        glRenderer.setSize(window.innerWidth * 0.85, window.innerHeight);
 
-    var directionalLight_2 = new THREE.DirectionalLight(0xFFFFFF, 1.0);
-    directionalLight_2.position.set(0, 0, 2300);
-    directionalLight_2.target.position.set(1400, 800, 0);
-    directionalLight_2.castShadow = true;
-    directionalLight_2.shadow.camera.near = 0.01;
-    directionalLight_2.shadow.camera.far = 3000;
-    directionalLight_2.shadow.camera.top = 1200;
-    directionalLight_2.shadow.camera.bottom = -1200;
-    directionalLight_2.shadow.camera.left = -1400;
-    directionalLight_2.shadow.camera.right = 1400;
-    glScene.add(directionalLight_2);
+        glScene = new THREE.Scene();
+        cssScene = new THREE.Scene();
 
-    //var helper = new THREE.CameraHelper( directionalLight_2.shadow.camera );
+        //-------------create lights
+        var ambientLight = new THREE.AmbientLight(0x555555);
+        glScene.add(ambientLight);
+        var directionalLight = new THREE.DirectionalLight(0xffffff);
+        directionalLight.position.set(1000, -2, 10).normalize();
+        glScene.add(directionalLight);
 
-    //glScene.add(helper);
+        var directionalLight_2 = new THREE.DirectionalLight(0xFFFFFF, 1.0);
+        directionalLight_2.position.set(0, 0, 2300);
+        directionalLight_2.target.position.set(1400, 800, 0);
+        directionalLight_2.castShadow = true;
+        directionalLight_2.shadow.camera.near = 0.01;
+        directionalLight_2.shadow.camera.far = 3000;
+        directionalLight_2.shadow.camera.top = 1200;
+        directionalLight_2.shadow.camera.bottom = -1200;
+        directionalLight_2.shadow.camera.left = -1400;
+        directionalLight_2.shadow.camera.right = 1400;
+        glScene.add(directionalLight_2);
+
+        //var helper = new THREE.CameraHelper( directionalLight_2.shadow.camera );
+
+        //glScene.add(helper);
+
+        creatAixs();
+
+        controls = new TrackballControls(camera, cssRenderer.domElement);
+        controls.rotateSpeed = 2;
+        controls.minDistance = 30;
+        controls.maxDistance = 8000;
+
+
+    }
+
+
+
 
 // 创建射线投射器（用于检测鼠标和物体的交互）
     const raycaster = new THREE.Raycaster();
@@ -150,6 +187,18 @@ async function initialize() {
         globalFLowsData = data.map(function (flow){
             return flow.sort((a, b) => d3.ascending(new Date(a.attributes.DATA), new Date(b.attributes.DATA)))
         });
+
+        const filteredDate = Array.from(new Set(globalFLowsData.flat().map(d=>d.attributes.DATA)))
+
+        globaleDateList = filteredDate.sort((a, b) => d3.ascending(a, b));
+
+        startDate = new Date(globaleDateList[0]);
+
+        var dateCount = globaleDateList.length;
+        endDate = new Date(globaleDateList[dateCount-1]);
+        totalDays = (endDate - startDate) / (1000 * 60 * 60 * 24);
+
+        //console.log(globaleDateList.map(d=> formatDate(d)));
 
         //console.log("globalFLowsData",globalFLowsData);
         initLayerControls();
@@ -221,13 +270,16 @@ async function initialize() {
     globalZAxisScale = d3.scaleLinear().domain(globalTimeRange).range([0, 1200]);
 
 
-    creatAixs();
-
+    //-------------create flow map-------------
     createMap();
+
+    createFlows_STC_animation();
+
+    //createFlows_arc_animation();
 
     //createFlows_arc();
 
-    createFlows_STC();
+    //createFlows_STC();
 
     //createFlows_3DWall();
 
@@ -236,10 +288,6 @@ async function initialize() {
     //createFlows_Old();
 
     // set controllers
-    controls = new TrackballControls(camera, cssRenderer.domElement);
-    controls.rotateSpeed = 2;
-    controls.minDistance = 30;
-    controls.maxDistance = 8000;
 
     // 交互监听
     const interactionLog = document.getElementById("log-list");
@@ -287,46 +335,179 @@ async function initialize() {
         renderer.setSize(window.innerWidth * 0.85, window.innerHeight);
     });
 
-    update();
-
-
-    // 处理下拉框选择事件
     document.getElementById('objectSelector').addEventListener('change', function (event) {
         const selectedObject = event.target.value;
         updateVisualizationMethods(selectedObject);
     });
 
+    //  --- animation control
+    document.getElementById("playPauseButton").addEventListener("click", togglePlayPause);
+    document.getElementById("progress").addEventListener("input", (event) => {
+        let daysElapsed = parseInt(event.target.value);
+        let newDate = new Date(startDate.getTime() + daysElapsed * 1000 * 60 * 60 * 24);
+        updateObjects(newDate);
+    });
+
+    update();
+
+    // 处理下拉框选择事件
+
+    function createGlRenderer() {
+        var glRenderer = new THREE.WebGLRenderer({alpha: true});
+        glRenderer.setClearColor(0x000000, 0);
+        glRenderer.setPixelRatio(window.devicePixelRatio);
+        glRenderer.setSize(window.innerWidth, window.innerHeight);
+        glRenderer.domElement.style.position = 'absolute';
+        //glRenderer.domElement.style.zIndex = 0;
+        glRenderer.domElement.style.top = 0;
+
+        //glRenderer.domElement.appendChild(cssRenderer.domElement);
+        //glRenderer.domElement.appendChild(cssRenderer.domElement);
+        glRenderer.shadowMap.enabled = true;
+        //glRenderer.shadowMap.type = THREE.PCFShadowMap;
+        //glRenderer.shadowMapAutoUpdate = true;
+
+        return glRenderer;
+    }
+
+    function createCssRenderer() {
+        var cssRenderer = new CSS3DRenderer();
+        cssRenderer.setSize(window.innerWidth, window.innerHeight);
+        cssRenderer.domElement.style.position = 'absolute';
+        cssRenderer.domElement.style.zIndex = 1;
+        cssRenderer.domElement.style.top = 1;
+        //cssRenderer.domElement.style.position = 'absolute';
+        cssRenderer.shadowMapAutoUpdate = true;
+        return cssRenderer;
+    }
+
+    function creatAixs() {
+        //create axis
+        var material = new THREE.LineBasicMaterial({color: 0x000000, opacity: 0.5});
+
+        //create axis
+        const points = [];
+
+        var x = map_length / 2, y = map_width / 2, z = map_height;
+        points.push(new THREE.Vector3(x, y, z));
+        points.push(new THREE.Vector3(x, y, 0));
+        points.push(new THREE.Vector3(x, y, z));
+
+        points.push(new THREE.Vector3(x, -y, z));
+        points.push(new THREE.Vector3(x, -y, 0));
+        points.push(new THREE.Vector3(x, -y, z));
+
+        points.push(new THREE.Vector3(-x, -y, z));
+        points.push(new THREE.Vector3(-x, -y, 0));
+        points.push(new THREE.Vector3(-x, -y, z));
+
+        points.push(new THREE.Vector3(-x, y, z));
+        points.push(new THREE.Vector3(-x, y, 0));
+        points.push(new THREE.Vector3(-x, y, z));
+        points.push(new THREE.Vector3(x, y, z));
+
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const line = new THREE.Line(geometry, material);
+        //add all the element to sence
+        glScene.add(line);
+
+    }
+
 }
 
-function createGlRenderer() {
-    var glRenderer = new THREE.WebGLRenderer({alpha: true});
-    glRenderer.setClearColor(0x000000, 0);
-    glRenderer.setPixelRatio(window.devicePixelRatio);
-    glRenderer.setSize(window.innerWidth, window.innerHeight);
-    glRenderer.domElement.style.position = 'absolute';
-    //glRenderer.domElement.style.zIndex = 0;
-    glRenderer.domElement.style.top = 0;
-
-    //glRenderer.domElement.appendChild(cssRenderer.domElement);
-    //glRenderer.domElement.appendChild(cssRenderer.domElement);
-    glRenderer.shadowMap.enabled = true;
-    //glRenderer.shadowMap.type = THREE.PCFShadowMap;
-    //glRenderer.shadowMapAutoUpdate = true;
-
-    return glRenderer;
+function convert(vertex) {
+    return new THREE.Vector3(vertex[0], vertex[1], vertex[2]);
 }
 
-function createCssRenderer() {
-    var cssRenderer = new CSS3DRenderer();
-    cssRenderer.setSize(window.innerWidth, window.innerHeight);
-    cssRenderer.domElement.style.position = 'absolute';
-    cssRenderer.domElement.style.zIndex = 1;
-    cssRenderer.domElement.style.top = 1;
-    //cssRenderer.domElement.style.position = 'absolute';
-    cssRenderer.shadowMapAutoUpdate = true;
-    return cssRenderer;
+function convert2D(vertex) {
+    return new THREE.Vector2(vertex[0], vertex[1]);
 }
 
+//-------------read flow data-------------
+async function readFlowsData() {
+
+    const allData = [];
+    let flowsList = null;
+
+    const fileNames = Array.from({length: 13}, (_, i) => `data/minard_map_data/Napoleones_${i + 1}.json`);
+
+    async function loadFiles() {
+
+        for (let i = 0; i < fileNames.length; i++) {
+            try {
+                const data = await d3.json(fileNames[i]);
+                //console.log(`读取 ${fileNames[i]}：`, data);
+                allData.push(data);
+            } catch (error) {
+                console.error(`加载 ${fileNames[i]} 失败:`, error);
+            }
+        }
+        //console.log("所有 JSON 数据：", allData);
+    }
+
+    async function reformatData() {
+
+        const getdata = allData.map(function (d) {
+            return d.features
+        })
+
+
+        flowsList = getdata;
+
+        //console.log("flowsList",flowsList)
+    }
+
+    async function processFlowData() {
+        try {
+            await loadFiles();  // 等待异步任务完成;
+            await reformatData();
+
+            //await loadIcelandGeoData();
+            //console.log("flowsList",flowsList);
+            //console.log(flowsList);
+
+            const flatData = flowsList.flat();
+            //console.log(flatData);
+
+            const maxSoldiers = Math.max(...flatData.map(item => item.attributes.SOLDIERS));
+            const minSoldiers = Math.min(...flatData.map(item => item.attributes.SOLDIERS));
+
+            const maxTemperature = Math.max(...flatData.map(item => item.attributes.TEMPERATUR));
+            const minTemperature = Math.min(...flatData.map(item => item.attributes.TEMPERATUR));
+
+            const maxDate = Math.max(...flatData.map(item => item.attributes.DATA));
+            const minDate = Math.min(...flatData.map(item => item.attributes.DATA));
+
+            //console.log("maxSoldiers",maxSoldiers,"minSoldiers",minSoldiers);
+            //`ture",maxTemperature,"minTemperature",minTemperature);
+            //console.log("newestDate",formatDate(new Date(maxDate)),"oldestDate",formatDate(new Date(minDate)));
+
+            globalTimeRange = [minDate, maxDate];
+            globalTemperatureRange = [minTemperature, maxTemperature];
+            globalSoldiersRange = [minSoldiers, maxSoldiers];
+
+
+        } catch (error) {
+            console.error("发生错误：", error);
+        }
+    }
+
+    await processFlowData();
+
+    async function loadIcelandGeoData(callback) {
+
+        const data = await d3.json("data/icelandgeo.json");
+        data.features.forEach(feature => {
+            dataIcelandGeo.push(feature);
+        })
+
+    }
+    return Promise.resolve(flowsList);
+
+}
+
+
+//-------------create flow map-------------
 function createMap() {
 
     d3.selectAll('.map-div')
@@ -358,45 +539,534 @@ function createMap() {
 
 }
 
-function creatAixs() {
-    //create axis
-    var material = new THREE.LineBasicMaterial({color: 0x000000, opacity: 0.5});
+//-------------create flow map graphics-------------
+async function createFlows_3DWall() {
 
-    //create axis
-    const points = [];
+    objects.forEach(obj => glScene.remove(obj.mesh));
 
-    var x = map_length / 2, y = map_width / 2, z = map_height;
-    points.push(new THREE.Vector3(x, y, z));
-    points.push(new THREE.Vector3(x, y, 0));
-    points.push(new THREE.Vector3(x, y, z));
+    console.log("Array.isArray(meshes) && meshes.some(Array.isArray)", Array.isArray(meshes) && meshes.some(Array.isArray));
+    //判断是否二维
+    if (Array.isArray(meshes) && meshes.some(Array.isArray)) {
+        meshes = meshes.flat();
+        meshes.forEach(mesh => glScene.remove(mesh));
+    } else {
+        meshes.forEach(mesh => glScene.remove(mesh));
+    }
 
-    points.push(new THREE.Vector3(x, -y, z));
-    points.push(new THREE.Vector3(x, -y, 0));
-    points.push(new THREE.Vector3(x, -y, z));
 
-    points.push(new THREE.Vector3(-x, -y, z));
-    points.push(new THREE.Vector3(-x, -y, 0));
-    points.push(new THREE.Vector3(-x, -y, z));
+    meshes = [];
+    meshes = globalFLowsData.map((flow, index) => {
 
-    points.push(new THREE.Vector3(-x, y, z));
-    points.push(new THREE.Vector3(-x, y, 0));
-    points.push(new THREE.Vector3(-x, y, z));
-    points.push(new THREE.Vector3(x, y, z));
+        let segments = [];
+        var vertex, geometry, material, mesh;
 
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    const line = new THREE.Line(geometry, material);
-    //add all the element to sence
-    glScene.add(line);
+        let vertices = flow.map(function (v) {
+            const point = projectGeoPointsTo3D(v)
+            //console.log("point",point);
+            return point;
+        });
+
+        //console.log("vertices", vertices);
+
+        for (var i = 0; i < vertices.length - 1; i++) {
+
+            const segmentCurve = new THREE.CatmullRomCurve3([vertices[i], vertices[i + 1]]);
+            const color = globalColorScale(flow[i].attributes.TEMPERATUR);
+            const radius = globalThicknessScale(flow[i].attributes.SOLDIERS);
+
+            //material = new THREE.MeshLambertMaterial({opacity: 1,transparent: true,  color: color });
+
+
+            // 5️⃣ 创建墙的剖面（矩形）
+            const wallHeight = 3;
+            const wallThickness = -radius * 10;
+            const shape = new THREE.Shape();
+            shape.moveTo(0, 0);
+            shape.lineTo(0, wallHeight);
+            shape.lineTo(wallThickness, wallHeight);
+            shape.lineTo(wallThickness, 0);
+            shape.closePath();
+
+            // 6️⃣ 使用 `ExtrudeGeometry` 沿折线生成墙体
+            const extrudeSettings = {
+                steps: 4,
+                bevelEnabled: false,
+                extrudePath: segmentCurve // 沿着折线挤出
+            };
+
+            const wallGeometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+            const wallMaterial = new THREE.MeshLambertMaterial({
+                color: color, // 让墙体醒目
+                emissive: 0x440000,
+                side: THREE.DoubleSide
+            });
+
+            const wallMesh = new THREE.Mesh(wallGeometry, wallMaterial);
+
+            wallMesh.castShadow = true;
+            wallMesh.layers.set(index + 1);
+
+            glScene.add(wallMesh);
+            segments.push(wallMesh);
+        }
+
+        return segments;
+    });
+
+    resetLayerControls(true);
+
+    console.log(meshes);
+
+    function projectGeoPointsTo3D(stop) {
+        var pointOrigin = {x: 0, y: 0};
+
+        var point_center = theMap.project(new mapboxgl.LngLat(map_center.lng, map_center.lat));
+
+        var point = new THREE.Vector3(0, 0, 0);
+
+        //project => (lng, lat)
+        var temp_point = theMap.project(new mapboxgl.LngLat(stop.geometry.x, stop.geometry.y));
+
+        point.x = temp_point.x - pointOrigin.x - map_length / 2;
+        point.y = 2 * point_center.y - temp_point.y - pointOrigin.y - map_width / 2;
+        //point.z = globalZAxisScale(stop.attributes.DATA);
+        point.z = 2;
+
+        return point;
+    }
 
 }
 
-function convert(vertex) {
-    return new THREE.Vector3(vertex[0], vertex[1], vertex[2]);
+
+async function createFlows_STC() {
+    objects.forEach(obj => glScene.remove(obj.mesh));
+    console.log("Array.isArray(meshes) && meshes.some(Array.isArray)",
+        Array.isArray(meshes) && meshes.some(Array.isArray));
+    //判断是否二维
+    if (Array.isArray(meshes) && meshes.some(Array.isArray)) {
+        meshes = meshes.flat();
+        meshes.forEach(mesh => glScene.remove(mesh));
+    } else {
+        meshes.forEach(mesh => glScene.remove(mesh));
+    }
+
+
+    meshes = globalFLowsData.map((flow, index) => {
+        //console.log("flow", flow);
+
+        //create flow lines with data
+
+        let segments = [];
+
+        var vertex, geometry, material, mesh;
+
+        let vertices = flow.map(function (v) {
+            const point = projectGeoPointsTo3D(v)
+            //console.log("point",point);
+            return point;
+        });
+
+        //console.log("vertices", vertices);
+
+        for (var i = 0; i < vertices.length - 1; i++) {
+
+            const segmentCurve = new THREE.CatmullRomCurve3([vertices[i], vertices[i + 1]]);
+            const color = globalColorScale(flow[i].attributes.TEMPERATUR);
+            const radius = globalThicknessScale(flow[i].attributes.SOLDIERS);
+
+            const segmentGeometry = new THREE.TubeGeometry(segmentCurve, 50, radius, 8, false);
+
+            const segmentMaterial = new THREE.MeshLambertMaterial({
+                opacity: 1,
+                transparent: true, color: color
+            });
+
+            const segmentMesh = new THREE.Mesh(segmentGeometry, segmentMaterial);
+
+            //material = new THREE.MeshLambertMaterial({opacity: 1,transparent: true,  color: color });
+
+            segmentMesh.castShadow = true;
+            segmentMesh.layers.set(index + 1);
+
+            glScene.add(segmentMesh);
+            segments.push(segmentMesh);
+        }
+        return segments;
+    });
+
+    resetLayerControls(true);
+
+
+    //console.log(meshes);
+
+    function projectGeoPointsTo3D(stop) {
+        var pointOrigin = {x: 0, y: 0};
+
+        var point_center = theMap.project(new mapboxgl.LngLat(map_center.lng, map_center.lat));
+
+        var point = new THREE.Vector3(0, 0, 0);
+
+        //project => (lng, lat)
+        var temp_point = theMap.project(new mapboxgl.LngLat(stop.geometry.x, stop.geometry.y));
+
+        point.x = temp_point.x - pointOrigin.x - map_length / 2;
+        point.y = 2 * point_center.y - temp_point.y - pointOrigin.y - map_width / 2;
+        point.z = globalZAxisScale(stop.attributes.DATA);
+        //console.log("point", point);
+
+        return point;
+    }
+
 }
 
-function convert2D(vertex) {
-    return new THREE.Vector2(vertex[0], vertex[1]);
+async function createFlows_arc() {
+    objects.forEach(obj => glScene.remove(obj.mesh));
+    console.log("Array.isArray(meshes) && meshes.some(Array.isArray)",
+        Array.isArray(meshes) && meshes.some(Array.isArray));
+    //判断是否二维
+    if (Array.isArray(meshes) && meshes.some(Array.isArray)) {
+        meshes = meshes.flat();
+        meshes.forEach(mesh => glScene.remove(mesh));
+    } else {
+        meshes.forEach(mesh => glScene.remove(mesh));
+    }
+
+    meshes = globalFLowsData.map((flow, index) => {
+
+        let segments = [];
+
+        var vertex, geometry, material, mesh;
+
+        let vertices = flow.map(function (v) {
+            const point = projectGeoPointsTo3D(v)
+            //console.log("point",point);
+            return point;
+        });
+
+        //console.log("vertices", vertices);
+
+        for (var i = 0; i < vertices.length - 1; i++) {
+
+            const pointA = vertices[i];
+            const pointB = vertices[i + 1];
+            const distance = pointA.distanceTo(pointB);
+
+            // 计算中点
+            const midpoint_flat = new THREE.Vector3().addVectors(pointA, pointB).multiplyScalar(0.5);
+            const zHeight_arc = (distance/2+2)*0.8;
+
+            const midpoint = new THREE.Vector3(midpoint_flat.x, midpoint_flat.y, zHeight_arc);
+
+            const curve = new THREE.CatmullRomCurve3( [pointA,midpoint, pointB] );
+
+            const color = globalColorScale(flow[i].attributes.TEMPERATUR);
+            const tubularSegments = 32; // 沿曲线方向的细分数
+            const radius = globalThicknessScale(flow[i].attributes.SOLDIERS);           // 管道半径
+            const radialSegments = 8;  // 管道横截面的细分数
+            const closed = false;      // 管道两端是否闭合
+            const geometry = new THREE.TubeGeometry(curve, tubularSegments, radius, radialSegments, closed);
+
+// 创建材质
+            const material = new THREE.MeshLambertMaterial({
+                color: color, // 让墙体醒目
+                emissive: 0x440000,
+                side: THREE.DoubleSide
+            });
+
+// 创建网格对象
+            const tube = new THREE.Mesh(geometry, material);
+
+            tube.castShadow = true;
+            tube.layers.set(index + 1);
+
+            glScene.add(tube);
+            segments.push(tube);
+        }
+        return segments;
+    });
+
+    resetLayerControls(true);
+
+    function projectGeoPointsTo3D(stop) {
+        var pointOrigin = {x: 0, y: 0};
+
+        var point_center = theMap.project(new mapboxgl.LngLat(map_center.lng, map_center.lat));
+
+        var point = new THREE.Vector3(0, 0, 0);
+
+        //project => (lng, lat)
+        var temp_point = theMap.project(new mapboxgl.LngLat(stop.geometry.x, stop.geometry.y));
+
+        point.x = temp_point.x - pointOrigin.x - map_length / 2;
+        point.y = 2 * point_center.y - temp_point.y - pointOrigin.y - map_width / 2;
+        //point.z = globalZAxisScale(stop.attributes.DATA);
+        point.z = 2;
+
+        return point;
+    }
+
+
+    //console.log(meshes);
+
+
 }
+
+async function createFlows_arc_animation() {
+
+    objects.forEach(obj => glScene.remove(obj.mesh));
+    console.log("Array.isArray(meshes) && meshes.some(Array.isArray)",
+        Array.isArray(meshes) && meshes.some(Array.isArray));
+    //判断是否二维
+    if (Array.isArray(meshes) && meshes.some(Array.isArray)) {
+        meshes = meshes.flat();
+        meshes.forEach(mesh => glScene.remove(mesh));
+    } else {
+        meshes.forEach(mesh => glScene.remove(mesh));
+    }
+
+
+    objects.forEach(mesh => glScene.remove(mesh))
+    //console.log(globalFLowsData);
+
+/*
+     eventData.forEach((data, index) => {
+            let geometry = new THREE.BoxGeometry(100, 100, 100);
+            let material = new THREE.MeshBasicMaterial({ color: d3.interpolateCool(index / eventData.length) });
+            let cube = new THREE.Mesh(geometry, material);
+            cube.position.set(data.position, 0, -10);
+            cube.visible = false;
+            objects.push({ mesh: cube, date: data.date });
+            glScene.add(cube);
+        });
+
+ */
+
+
+    meshes = globalFLowsData.map((flow, index) => {
+
+        let segments = [];
+
+        var vertex, geometry, material, mesh;
+
+        let vertices = flow.map(function (v) {
+            const point = projectGeoPointsTo3D(v)
+            //console.log("point",point);
+            return point;
+        });
+
+        //console.log("vertices", vertices);
+
+        for (var i = 0; i < vertices.length - 1; i++) {
+
+            const thisDay = formatDate (flow[i].attributes.DATA);
+
+            //console.log("thisDay",thisDay);
+            const pointA = vertices[i];
+            const pointB = vertices[i + 1];
+            const distance = pointA.distanceTo(pointB);
+
+            // 计算中点
+            const midpoint_flat = new THREE.Vector3().addVectors(pointA, pointB).multiplyScalar(0.5);
+            const zHeight_arc = (distance/2+2)*0.8;
+
+            const midpoint = new THREE.Vector3(midpoint_flat.x, midpoint_flat.y, zHeight_arc);
+
+            const curve = new THREE.CatmullRomCurve3( [pointA,midpoint, pointB] );
+
+            //const color = globalColorScale(flow[i].attributes.TEMPERATUR);
+
+            const color = globalDivers_ColorScale(index);
+
+            const tubularSegments = 32; // 沿曲线方向的细分数
+            const radius = globalThicknessScale(flow[i].attributes.SOLDIERS);           // 管道半径
+            const radialSegments = 8;  // 管道横截面的细分数
+            const closed = false;      // 管道两端是否闭合
+            const geometry = new THREE.TubeGeometry(curve, tubularSegments, radius, radialSegments, closed);
+
+// 创建材质
+            const material = new THREE.MeshLambertMaterial({
+                color: color, // 让墙体醒目
+                emissive: 0x440000,
+                side: THREE.DoubleSide
+            });
+
+// 创建网格对象
+            const tube = new THREE.Mesh(geometry, material);
+
+            tube.castShadow = true;
+            //tube.layers.set(index + 1);
+            tube.visible = false;
+
+            glScene.add(tube);
+            //segments.push(tube);
+            objects.push({ mesh: tube, date:  new Date(thisDay) });
+
+        }
+        return segments;
+    });
+
+    resetLayerControls(true);
+
+    function projectGeoPointsTo3D(stop) {
+        var pointOrigin = {x: 0, y: 0};
+
+        var point_center = theMap.project(new mapboxgl.LngLat(map_center.lng, map_center.lat));
+
+        var point = new THREE.Vector3(0, 0, 0);
+
+        //project => (lng, lat)
+        var temp_point = theMap.project(new mapboxgl.LngLat(stop.geometry.x, stop.geometry.y));
+
+        point.x = temp_point.x - pointOrigin.x - map_length / 2;
+        point.y = 2 * point_center.y - temp_point.y - pointOrigin.y - map_width / 2;
+        //point.z = globalZAxisScale(stop.attributes.DATA);
+        point.z = 2;
+
+        return point;
+    }
+
+
+    //console.log(meshes);
+
+}
+
+async function createFlows_STC_animation() {
+
+    //console.log(startDate,endDate,totalDays)
+
+    console.log("Array.isArray(meshes) && meshes.some(Array.isArray)",
+        Array.isArray(meshes) && meshes.some(Array.isArray));
+    //判断是否二维
+    if (Array.isArray(meshes) && meshes.some(Array.isArray)) {
+        meshes = meshes.flat();
+        meshes.forEach(mesh => glScene.remove(mesh));
+    } else {
+        meshes.forEach(mesh => glScene.remove(mesh));
+    }
+
+
+    objects.forEach(obj => glScene.remove(obj.mesh));
+    //console.log(globalFLowsData);
+
+
+    meshes = globalFLowsData.map((flow, index) => {
+
+        let segments = [];
+
+        let vertices = flow.map(function (v) {
+            const point = projectGeoPointsTo3D(v)
+            //console.log("point",point);
+            return point;
+        });
+
+        //console.log("vertices", vertices);
+
+        for (var i = 0; i < vertices.length - 1; i++) {
+
+            const thisDay = formatDate (flow[i].attributes.DATA);
+
+            //console.log("thisDay",thisDay);
+            const segmentCurve = new THREE.CatmullRomCurve3([vertices[i], vertices[i + 1]]);
+            const color = globalColorScale(flow[i].attributes.TEMPERATUR);
+            const radius = globalThicknessScale(flow[i].attributes.SOLDIERS);
+
+            const segmentGeometry = new THREE.TubeGeometry(segmentCurve, 50, radius, 8, false);
+
+            const segmentMaterial = new THREE.MeshLambertMaterial({
+                opacity: 1,
+                transparent: true, color: color
+            });
+
+            const segmentMesh = new THREE.Mesh(segmentGeometry, segmentMaterial);
+
+            //material = new THREE.MeshLambertMaterial({opacity: 1,transparent: true,  color: color });
+
+            segmentMesh.castShadow = true;
+            segmentMesh.layers.set(index + 1);
+
+            //tube.layers.set(index + 1);
+            segmentMesh.visible = false;
+
+            glScene.add(segmentMesh);
+            //segments.push(segmentMesh);
+            objects.push({ mesh: segmentMesh, date:  new Date(thisDay) });
+
+        }
+        return segments;
+    });
+
+    resetLayerControls(true);
+
+    function projectGeoPointsTo3D(stop) {
+        var pointOrigin = {x: 0, y: 0};
+
+        var point_center = theMap.project(new mapboxgl.LngLat(map_center.lng, map_center.lat));
+
+        var point = new THREE.Vector3(0, 0, 0);
+
+        //project => (lng, lat)
+        var temp_point = theMap.project(new mapboxgl.LngLat(stop.geometry.x, stop.geometry.y));
+
+        point.x = temp_point.x - pointOrigin.x - map_length / 2;
+        point.y = 2 * point_center.y - temp_point.y - pointOrigin.y - map_width / 2;
+        point.z = globalZAxisScale(stop.attributes.DATA);
+        //console.log("point", point);
+
+        return point;
+    }
+
+
+    //console.log(meshes);
+
+}
+
+//animation
+
+function updateObjects(date) {
+    document.getElementById("currentDate").textContent = `Date: ${date.toISOString().split('T')[0]}`;
+    let daysElapsed = (date - startDate) / (1000 * 60 * 60 * 24);
+    document.getElementById("progress").value = daysElapsed;
+
+    objects.forEach(obj => {
+        obj.mesh.visible = date >= obj.date;
+    });
+
+}
+
+function startAnimation() {
+    isPlaying = true;
+    document.getElementById("playPauseButton").textContent = "Pause";
+
+    d3.select({ t: 0 })
+        .transition()
+        .duration(20000)
+        .ease(d3.easeLinear)
+        .tween("date", function() {
+            let interpolator = d3.interpolateNumber(0, totalDays);
+            return function(t) {
+                if (!isPlaying) return;
+                let newDate = new Date(startDate.getTime() + interpolator(t) * 1000 * 60 * 60 * 24);
+                updateObjects(newDate);
+            };
+        });
+}
+
+function togglePlayPause() {
+    isPlaying = !isPlaying;
+    document.getElementById("playPauseButton").textContent = isPlaying ? "Pause" : "Play";
+    if (isPlaying) startAnimation();
+}
+
+
+
+function animate() {
+    requestAnimationFrame(animate);
+    cssRenderer.render(cssScene, camera);
+    glRenderer.render(glScene, camera);
+}
+
+animate();
+
 
 function draw3DBaseMap() {
 
@@ -478,126 +1148,6 @@ function draw3DBaseMap() {
     cssObject.position.x = 0, cssObject.position.y = 0, cssObject.position.z = 1000;
     cssObject.receiveShadow = true;
     cssScene.add(cssObject);
-}
-
-async function readFlowsData() {
-
-    const allData = [];
-    let flowsList = null;
-
-    const fileNames = Array.from({length: 13}, (_, i) => `data/minard_map_data/Napoleones_${i + 1}.json`);
-
-    async function loadFiles() {
-
-        for (let i = 0; i < fileNames.length; i++) {
-            try {
-                const data = await d3.json(fileNames[i]);
-                //console.log(`读取 ${fileNames[i]}：`, data);
-                allData.push(data);
-            } catch (error) {
-                console.error(`加载 ${fileNames[i]} 失败:`, error);
-            }
-        }
-        //console.log("所有 JSON 数据：", allData);
-    }
-
-    async function reformatData() {
-
-        const getdata = allData.map(function (d) {
-            return d.features
-        })
-
-
-        flowsList = getdata;
-
-        //console.log("flowsList",flowsList)
-    }
-
-    async function processFlowData() {
-        try {
-            await loadFiles();  // 等待异步任务完成;
-            await reformatData();
-
-            //await loadIcelandGeoData();
-            //console.log("flowsList",flowsList);
-            //console.log(flowsList);
-
-            const flatData = flowsList.flat();
-            //console.log(flatData);
-
-            const maxSoldiers = Math.max(...flatData.map(item => item.attributes.SOLDIERS));
-            const minSoldiers = Math.min(...flatData.map(item => item.attributes.SOLDIERS));
-
-            const maxTemperature = Math.max(...flatData.map(item => item.attributes.TEMPERATUR));
-            const minTemperature = Math.min(...flatData.map(item => item.attributes.TEMPERATUR));
-
-            const maxDate = Math.max(...flatData.map(item => item.attributes.DATA));
-            const minDate = Math.min(...flatData.map(item => item.attributes.DATA));
-
-            //console.log("maxSoldiers",maxSoldiers,"minSoldiers",minSoldiers);
-            //`ture",maxTemperature,"minTemperature",minTemperature);
-            //console.log("newestDate",formatDate(new Date(maxDate)),"oldestDate",formatDate(new Date(minDate)));
-
-            globalTimeRange = [minDate, maxDate];
-            globalTemperatureRange = [minTemperature, maxTemperature];
-            globalSoldiersRange = [minSoldiers, maxSoldiers];
-
-        } catch (error) {
-            console.error("发生错误：", error);
-        }
-    }
-
-    await processFlowData();
-
-    async function loadIcelandGeoData(callback) {
-
-        const data = await d3.json("data/icelandgeo.json");
-        data.features.forEach(feature => {
-            dataIcelandGeo.push(feature);
-        })
-
-    }
-    return Promise.resolve(flowsList);
-
-}
-
-function drawCylinderLines(vertices, durations, coor) {//,troops,temperatures
-
-    console.log("vertices, drawCylinderLines", vertices);
-    var vertex, geometry, material, mesh;
-    var max = d3.max(durations);
-    var min = d3.min(durations);
-    //console.log(max, min)
-
-    //set the range of troops
-    var trooplinear = d3.scaleLinear([min, max], [2, 20]);
-    var temperaturelinear = d3.scaleLinear([d3.min(durations), d3.max(durations)], ["blue", "red"]);
-
-    var segments = new THREE.Object3D();
-    vertices = vertices.map(convert);
-    console.log("vertices mapped", vertices);
-
-    for (var i = 1, len = vertices.length - 1; i < len; i++) {
-
-        var path = new THREE.QuadraticBezierCurve3(vertices[i - 1], vertices[i], vertices[i + 1]);
-        var color = temperaturelinear(durations[i]);
-        vertex = vertices[i];
-
-        geometry = new THREE.TubeGeometry(path, 4, trooplinear(durations[i]), 16);
-        material = new THREE.MeshLambertMaterial({
-            opacity: 1,
-            transparent: true,
-            color: color
-        });
-
-        mesh = new THREE.Mesh(geometry, material)
-        mesh.castShadow = true;
-
-        segments.add(mesh);
-
-    }
-
-    return segments;
 }
 
 function drawLinesOnPlane(vertices, troops, temperatures, coor) {
@@ -729,360 +1279,7 @@ function drawLinesOnPlane(vertices, troops, temperatures, coor) {
     return segments;
 }
 
-function projectFlowByTime(data) {
-
-    console.log(data);
-
-    var pointOrigin = {
-        x: 0, y: 0
-    };
-
-    var point_center = theMap.project(new mapboxgl.LngLat(map_center.lng, map_center.lat));
-
-    var point = new THREE.Vector3(0, 0, 0);
-
-    var count = data.length;
-
-
-    var coor = [];
-
-    var points = [], durations = [];
-
-    for (var i = 0; i < count; i++) {
-        //every stop of the troops
-        var stop = data[i];
-        console.log("stop", stop)
-
-        //project => (lng, lat)
-        var temp_point = theMap.project(new mapboxgl.LngLat(stop.geometry.x, stop.geometry.y));
-
-        const timestamp = stop.DATA;
-        const date = new Date(timestamp);
-        const formatTime = d3.timeFormat("%Y-%m-%d");
-
-        point.x = temp_point.x - pointOrigin.x - map_length / 2;
-        point.y = 2 * point_center.y - temp_point.y - pointOrigin.y - map_width / 2;
-        //point.z = stop.durationsec*10;
-        point.z = i * 30;
-
-        coor.push({lat: stop.geometry.y, lng: stop.geometry.x});
-        points.push([point.x, point.y, point.z]);
-        //durations.push(parseInt(stop.attributes.FID));
-        durations.push(i * 5)
-    }
-    return points;
-}
-
-function getGraphicFlowData(data) {
-
-    //console.log(data);
-
-    var pointOrigin = {
-        x: 0, y: 0
-    };
-
-    var point_center = theMap.project(new mapboxgl.LngLat(map_center.lng, map_center.lat));
-
-    var point = new THREE.Vector3(0, 0, 0);
-
-    var count = data.length;
-
-
-    var coor = [];
-
-    var points = [], durations = [];
-
-    for (var i = 0; i < count; i++) {
-        //every stop of the troops
-        var stop = data[i];
-        //console.log("stop",stop)
-
-        //project => (lng, lat)
-        var temp_point = theMap.project(new mapboxgl.LngLat(stop.geometry.x, stop.geometry.y));
-
-        const timestamp = stop.DATA;
-        const date = new Date(timestamp);
-        const formatTime = d3.timeFormat("%Y-%m-%d");
-
-        point.x = temp_point.x - pointOrigin.x - map_length / 2;
-        point.y = 2 * point_center.y - temp_point.y - pointOrigin.y - map_width / 2;
-        //point.z = stop.durationsec*10;
-        point.z = i * 30;
-
-        coor.push({lat: stop.geometry.y, lng: stop.geometry.x});
-        points.push([point.x, point.y, point.z]);
-        //durations.push(parseInt(stop.attributes.FID));
-        durations.push(i * 5)
-    }
-    return [points, coor, durations];
-}
-
-async function createFlows_3DWall() {
-    console.log("Array.isArray(meshes) && meshes.some(Array.isArray)", Array.isArray(meshes) && meshes.some(Array.isArray));
-    //判断是否二维
-    if (Array.isArray(meshes) && meshes.some(Array.isArray)) {
-        meshes = meshes.flat();
-        meshes.forEach(mesh => glScene.remove(mesh));
-    } else {
-        meshes.forEach(mesh => glScene.remove(mesh));
-    }
-
-
-    meshes = [];
-    meshes = globalFLowsData.map((flow, index) => {
-
-        let segments = [];
-        var vertex, geometry, material, mesh;
-
-        let vertices = flow.map(function (v) {
-            const point = projectGeoPointsTo3D(v)
-            //console.log("point",point);
-            return point;
-        });
-
-        //console.log("vertices", vertices);
-
-        for (var i = 0; i < vertices.length - 1; i++) {
-
-            const segmentCurve = new THREE.CatmullRomCurve3([vertices[i], vertices[i + 1]]);
-            const color = globalColorScale(flow[i].attributes.TEMPERATUR);
-            const radius = globalThicknessScale(flow[i].attributes.SOLDIERS);
-
-            //material = new THREE.MeshLambertMaterial({opacity: 1,transparent: true,  color: color });
-
-
-            // 5️⃣ 创建墙的剖面（矩形）
-            const wallHeight = 3;
-            const wallThickness = -radius * 10;
-            const shape = new THREE.Shape();
-            shape.moveTo(0, 0);
-            shape.lineTo(0, wallHeight);
-            shape.lineTo(wallThickness, wallHeight);
-            shape.lineTo(wallThickness, 0);
-            shape.closePath();
-
-            // 6️⃣ 使用 `ExtrudeGeometry` 沿折线生成墙体
-            const extrudeSettings = {
-                steps: 4,
-                bevelEnabled: false,
-                extrudePath: segmentCurve // 沿着折线挤出
-            };
-
-            const wallGeometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-            const wallMaterial = new THREE.MeshLambertMaterial({
-                color: color, // 让墙体醒目
-                emissive: 0x440000,
-                side: THREE.DoubleSide
-            });
-
-            const wallMesh = new THREE.Mesh(wallGeometry, wallMaterial);
-
-            wallMesh.castShadow = true;
-            wallMesh.layers.set(index + 1);
-
-            glScene.add(wallMesh);
-            segments.push(wallMesh);
-        }
-
-        return segments;
-    });
-
-    resetLayerControls(true);
-
-    console.log(meshes);
-
-    function projectGeoPointsTo3D(stop) {
-        var pointOrigin = {x: 0, y: 0};
-
-        var point_center = theMap.project(new mapboxgl.LngLat(map_center.lng, map_center.lat));
-
-        var point = new THREE.Vector3(0, 0, 0);
-
-        //project => (lng, lat)
-        var temp_point = theMap.project(new mapboxgl.LngLat(stop.geometry.x, stop.geometry.y));
-
-        point.x = temp_point.x - pointOrigin.x - map_length / 2;
-        point.y = 2 * point_center.y - temp_point.y - pointOrigin.y - map_width / 2;
-        //point.z = globalZAxisScale(stop.attributes.DATA);
-        point.z = 2;
-
-        return point;
-    }
-
-}
-
-async function createFlows_STC() {
-
-    console.log("Array.isArray(meshes) && meshes.some(Array.isArray)",
-        Array.isArray(meshes) && meshes.some(Array.isArray));
-    //判断是否二维
-    if (Array.isArray(meshes) && meshes.some(Array.isArray)) {
-        meshes = meshes.flat();
-        meshes.forEach(mesh => glScene.remove(mesh));
-    } else {
-        meshes.forEach(mesh => glScene.remove(mesh));
-    }
-
-
-    meshes = globalFLowsData.map((flow, index) => {
-        //console.log("flow", flow);
-
-        //create flow lines with data
-
-        let segments = [];
-
-        var vertex, geometry, material, mesh;
-
-        let vertices = flow.map(function (v) {
-            const point = projectGeoPointsTo3D(v)
-            //console.log("point",point);
-            return point;
-        });
-
-        //console.log("vertices", vertices);
-
-        for (var i = 0; i < vertices.length - 1; i++) {
-
-            const segmentCurve = new THREE.CatmullRomCurve3([vertices[i], vertices[i + 1]]);
-            const color = globalColorScale(flow[i].attributes.TEMPERATUR);
-            const radius = globalThicknessScale(flow[i].attributes.SOLDIERS);
-
-            const segmentGeometry = new THREE.TubeGeometry(segmentCurve, 50, radius, 8, false);
-
-            const segmentMaterial = new THREE.MeshLambertMaterial({
-                opacity: 1,
-                transparent: true, color: color
-            });
-
-            const segmentMesh = new THREE.Mesh(segmentGeometry, segmentMaterial);
-
-            //material = new THREE.MeshLambertMaterial({opacity: 1,transparent: true,  color: color });
-
-            segmentMesh.castShadow = true;
-            segmentMesh.layers.set(index + 1);
-
-            glScene.add(segmentMesh);
-            segments.push(segmentMesh);
-        }
-        return segments;
-    });
-
-    resetLayerControls(true);
-
-
-    //console.log(meshes);
-
-    function projectGeoPointsTo3D(stop) {
-        var pointOrigin = {x: 0, y: 0};
-
-        var point_center = theMap.project(new mapboxgl.LngLat(map_center.lng, map_center.lat));
-
-        var point = new THREE.Vector3(0, 0, 0);
-
-        //project => (lng, lat)
-        var temp_point = theMap.project(new mapboxgl.LngLat(stop.geometry.x, stop.geometry.y));
-
-        point.x = temp_point.x - pointOrigin.x - map_length / 2;
-        point.y = 2 * point_center.y - temp_point.y - pointOrigin.y - map_width / 2;
-        point.z = globalZAxisScale(stop.attributes.DATA);
-        //console.log("point", point);
-
-        return point;
-    }
-
-}
-
-async function createFlows_arc() {
-
-    console.log("Array.isArray(meshes) && meshes.some(Array.isArray)",
-        Array.isArray(meshes) && meshes.some(Array.isArray));
-    //判断是否二维
-    if (Array.isArray(meshes) && meshes.some(Array.isArray)) {
-        meshes = meshes.flat();
-        meshes.forEach(mesh => glScene.remove(mesh));
-    } else {
-        meshes.forEach(mesh => glScene.remove(mesh));
-    }
-
-    meshes = globalFLowsData.map((flow, index) => {
-
-        let segments = [];
-
-        var vertex, geometry, material, mesh;
-
-        let vertices = flow.map(function (v) {
-            const point = projectGeoPointsTo3D(v)
-            //console.log("point",point);
-            return point;
-        });
-
-        //console.log("vertices", vertices);
-
-        for (var i = 0; i < vertices.length - 1; i++) {
-
-            const pointA = vertices[i];
-            const pointB = vertices[i + 1];
-            const distance = pointA.distanceTo(pointB);
-
-            // 计算中点
-            const midpoint_flat = new THREE.Vector3().addVectors(pointA, pointB).multiplyScalar(0.5);
-            const zHeight_arc = (distance/2+2)*0.8;
-
-            const midpoint = new THREE.Vector3(midpoint_flat.x, midpoint_flat.y, zHeight_arc);
-
-            const curve = new THREE.CatmullRomCurve3( [pointA,midpoint, pointB] );
-
-            const color = globalColorScale(flow[i].attributes.TEMPERATUR);
-            const tubularSegments = 32; // 沿曲线方向的细分数
-            const radius = globalThicknessScale(flow[i].attributes.SOLDIERS);           // 管道半径
-            const radialSegments = 8;  // 管道横截面的细分数
-            const closed = false;      // 管道两端是否闭合
-            const geometry = new THREE.TubeGeometry(curve, tubularSegments, radius, radialSegments, closed);
-
-// 创建材质
-            const material = new THREE.MeshLambertMaterial({
-                color: color, // 让墙体醒目
-                emissive: 0x440000,
-                side: THREE.DoubleSide
-            });
-
-// 创建网格对象
-            const tube = new THREE.Mesh(geometry, material);
-
-            tube.castShadow = true;
-            tube.layers.set(index + 1);
-
-            glScene.add(tube);
-            segments.push(tube);
-        }
-        return segments;
-    });
-
-    resetLayerControls(true);
-
-    function projectGeoPointsTo3D(stop) {
-        var pointOrigin = {x: 0, y: 0};
-
-        var point_center = theMap.project(new mapboxgl.LngLat(map_center.lng, map_center.lat));
-
-        var point = new THREE.Vector3(0, 0, 0);
-
-        //project => (lng, lat)
-        var temp_point = theMap.project(new mapboxgl.LngLat(stop.geometry.x, stop.geometry.y));
-
-        point.x = temp_point.x - pointOrigin.x - map_length / 2;
-        point.y = 2 * point_center.y - temp_point.y - pointOrigin.y - map_width / 2;
-        //point.z = globalZAxisScale(stop.attributes.DATA);
-        point.z = 2;
-
-        return point;
-    }
-
-
-    //console.log(meshes);
-
-
-}
+//-------------create interaction components-------------
 
 function resetLayerControls(switchCheckbox) {
     if (switchCheckbox) {
@@ -1103,74 +1300,6 @@ function resetLayerControls(switchCheckbox) {
     }
 }
 
-async function createFlows_Old() {
-
-    globalFLowsData.forEach(function (d) {
-        //console.log(d);
-        const [points, coor, durations] = getGraphicFlowData(d);
-
-        var flow_3D = drawCylinderLines(points, durations, coor);
-        flow_3D.castShadow = true;
-        flow_3D.receiveShadow = true;
-        glScene.add(flow_3D);
-
-    })
-
-
-    //var flow_2D = drawLinesOnPlane(points,durations,coor);
-    //glScene.add(flow_2D);
-}
-
-function createFlows_CatmullRomCurve3(pointArr) {
-
-    //console.log(pointArr)
-
-
-    const points = pointArr.map(function (d) {
-
-        //console.log(d)
-        return new THREE.Vector3(d[0], d[1], d[2]);
-    })
-    //console.log("points", points)
-
-    // 创建一条平滑曲线
-    const curve = new THREE.CatmullRomCurve3(points);
-
-// 生成管道模型
-    const tubularSegments = 100; // 细分段数（数值越高，管道越平滑）
-    const radius = 10; // 管道半径
-    const radialSegments = 8; // 横向分段数
-    const closed = false; // 是否闭合
-
-    const geometry = new THREE.TubeGeometry(curve, tubularSegments, radius, radialSegments, closed);
-
-// 计算每个顶点的颜色
-    const colors = [];
-    for (let i = 0; i < geometry.attributes.position.count; i++) {
-        // 根据顶点索引计算颜色，创建渐变效果
-        const t = i / geometry.attributes.position.count; // 归一化 [0,1]
-        colors.push(1 - t, 0, t); // 颜色从红色到蓝色变化
-    }
-
-// 将颜色数据添加到几何体
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-
-// 创建材质（使用顶点颜色）
-    const material = new THREE.MeshStandardMaterial({
-        vertexColors: true, // 启用顶点颜色
-        side: THREE.DoubleSide, // 显示两面
-        metalness: 0.3,
-        roughness: 0.5
-    });
-
-// 创建网格
-    const tube = new THREE.Mesh(geometry, material);
-    glScene.add(tube);
-
-    tubes.push(tube);
-
-}
-
 function updateVisualizationMethods(selectedMethod) {
     //console.log(selectedMethod);
     if (selectedMethod == "stc") {
@@ -1180,6 +1309,12 @@ function updateVisualizationMethods(selectedMethod) {
     } else if (selectedMethod == "arcs") {
         createFlows_arc();
     }
+    else if (selectedMethod == "arcs_animation") {
+        createFlows_arc_animation();
+    }
+    else if (selectedMethod == "stc_animation") {
+        createFlows_STC_animation();
+    }
 }
 
 function update() {
@@ -1188,3 +1323,4 @@ function update() {
     glRenderer.render(glScene, camera);
     requestAnimationFrame(update);
 }
+

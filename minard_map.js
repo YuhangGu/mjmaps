@@ -29,11 +29,18 @@ let globalFLowsData;
 let globalSoldiersRange = [0, 0];
 let globalTemperatureRange = [0, 0];
 let globalTimeRange = [0, 0];
+let timeSpan = 0;
 
 let globalColorScale = null;
 let globalThicknessScale = null;
 let globalZAxisScale = null;
+let globalTimeScale = null;
 let corpsNameList = null;
+
+let troopsSegments = [];
+let troopTracks = [];
+let timer_army = 0; // 时间从 0 到 24 小时，模拟一天
+
 
 let globalDivers_ColorScale = d3.scaleOrdinal()
     .domain(d3.range(17))  // 17 个类别
@@ -162,7 +169,6 @@ async function initialize() {
 
 
 
-
 // 创建射线投射器（用于检测鼠标和物体的交互）
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -269,11 +275,17 @@ async function initialize() {
 
     globalZAxisScale = d3.scaleLinear().domain(globalTimeRange).range([0, 1200]);
 
+    globalTimeScale = d3.scaleLinear().domain(globalTimeRange).range([0, 24])
+
 
     //-------------create flow map-------------
     createMap();
 
-    createFlows_STC_animation();
+    //createFlows_path_animation_2D()
+
+    createFlows_path_animation_3D()
+
+    //createFlows_STC_animation();
 
     //createFlows_arc_animation();
 
@@ -349,6 +361,8 @@ async function initialize() {
     });
 
     update();
+
+    animate();
 
     // 处理下拉框选择事件
 
@@ -483,6 +497,9 @@ async function readFlowsData() {
             //console.log("newestDate",formatDate(new Date(maxDate)),"oldestDate",formatDate(new Date(minDate)));
 
             globalTimeRange = [minDate, maxDate];
+            timeSpan = formatDate(new Date(maxDate)) - formatDate(new Date(minDate));
+
+            //console.log("timeSpan",timeSpan)
             globalTemperatureRange = [minTemperature, maxTemperature];
             globalSoldiersRange = [minSoldiers, maxSoldiers];
 
@@ -636,7 +653,6 @@ async function createFlows_3DWall() {
     }
 
 }
-
 
 async function createFlows_STC() {
     objects.forEach(obj => glScene.remove(obj.mesh));
@@ -828,19 +844,6 @@ async function createFlows_arc_animation() {
     objects.forEach(mesh => glScene.remove(mesh))
     //console.log(globalFLowsData);
 
-/*
-     eventData.forEach((data, index) => {
-            let geometry = new THREE.BoxGeometry(100, 100, 100);
-            let material = new THREE.MeshBasicMaterial({ color: d3.interpolateCool(index / eventData.length) });
-            let cube = new THREE.Mesh(geometry, material);
-            cube.position.set(data.position, 0, -10);
-            cube.visible = false;
-            objects.push({ mesh: cube, date: data.date });
-            glScene.add(cube);
-        });
-
- */
-
 
     meshes = globalFLowsData.map((flow, index) => {
 
@@ -1020,6 +1023,191 @@ async function createFlows_STC_animation() {
 
 }
 
+async function createFlows_path_animation_2D() {
+
+    objects.forEach(obj => glScene.remove(obj.mesh));
+
+    console.log("Array.isArray(meshes) && meshes.some(Array.isArray)", Array.isArray(meshes) && meshes.some(Array.isArray));
+    //判断是否二维
+    if (Array.isArray(meshes) && meshes.some(Array.isArray)) {
+        meshes = meshes.flat();
+        meshes.forEach(mesh => glScene.remove(mesh));
+    } else {
+        meshes.forEach(mesh => glScene.remove(mesh));
+    }
+
+    meshes = [];
+
+
+    meshes = globalFLowsData.map((flow, index) => {
+
+        let segments = [];
+        var vertex, geometry, material, mesh;
+
+        let vertices = flow.map(function (v) {
+            const point = projectGeoPointsTo3D(v)
+            //console.log("point",point);
+            return point;
+        });
+
+        //console.log("vertices", vertices);
+
+        for (var i = 0; i < vertices.length - 1; i++) {
+
+            const path = new THREE.CatmullRomCurve3([vertices[i], vertices[i + 1]]);
+            const color = globalDivers_ColorScale(index);
+            const colorTempreture = globalColorScale(flow[i].attributes.TEMPERATUR);
+
+            const radius = globalThicknessScale(flow[i].attributes.SOLDIERS);
+
+            //material = new THREE.MeshLambertMaterial({opacity: 1,transparent: true,  color: color });
+
+            const pathMaterial = new THREE.LineBasicMaterial({ color: colorTempreture }); // 蓝色路径
+            const pathGeometry = new THREE.BufferGeometry().setFromPoints(path.getPoints(10));
+            const pathLine = new THREE.Line(pathGeometry, pathMaterial);
+            pathLine.visible = false;
+            glScene.add(pathLine);
+            segments.push(pathLine);
+
+            const geometry = new THREE.SphereGeometry(20);
+            const material= new THREE.MeshLambertMaterial({ color: color });
+            const troopDot = new THREE.Mesh(geometry, material);
+            troopDot.visible = false;
+            glScene.add(troopDot);
+            segments.push(troopDot);
+
+            const timeStart = globalTimeScale(flow[i].attributes.DATA);
+            const timeEnd =  globalTimeScale(flow[i+1].attributes.DATA);
+
+            troopsSegments.push({
+                troopMesh : troopDot,
+                path: path,
+                time: [timeStart , timeEnd]
+            });
+            troopTracks.push({
+                mesh: pathLine,
+                time: [timeStart , timeEnd]
+            })
+
+
+        }
+
+        return segments;
+    });
+
+    resetLayerControls(true);
+
+    //console.log(meshes);
+
+    function projectGeoPointsTo3D(stop) {
+        var pointOrigin = {x: 0, y: 0};
+
+        var point_center = theMap.project(new mapboxgl.LngLat(map_center.lng, map_center.lat));
+
+        var point = new THREE.Vector3(0, 0, 0);
+
+        //project => (lng, lat)
+        var temp_point = theMap.project(new mapboxgl.LngLat(stop.geometry.x, stop.geometry.y));
+
+        point.x = temp_point.x - pointOrigin.x - map_length / 2;
+        point.y = 2 * point_center.y - temp_point.y - pointOrigin.y - map_width / 2;
+        //point.z = globalZAxisScale(stop.attributes.DATA);
+        point.z = 2;
+
+        return point;
+    }
+
+}
+
+async function createFlows_path_animation_3D() {
+
+    objects.forEach(obj => glScene.remove(obj.mesh));
+
+    console.log("Array.isArray(meshes) && meshes.some(Array.isArray)", Array.isArray(meshes) && meshes.some(Array.isArray));
+    //判断是否二维
+    if (Array.isArray(meshes) && meshes.some(Array.isArray)) {
+        meshes = meshes.flat();
+        meshes.forEach(mesh => glScene.remove(mesh));
+    } else {
+        meshes.forEach(mesh => glScene.remove(mesh));
+    }
+
+    meshes = [];
+
+
+    meshes = globalFLowsData.map((flow, index) => {
+
+        let segments = [];
+        var vertex, geometry, material, mesh;
+
+        let vertices = flow.map(function (v) {
+            const point = projectGeoPointsTo3D(v)
+            //console.log("point",point);
+            return point;
+        });
+
+        //console.log("vertices", vertices);
+
+        for (var i = 0; i < vertices.length - 1; i++) {
+
+            const path = new THREE.CatmullRomCurve3([vertices[i], vertices[i + 1]]);
+            const color = globalDivers_ColorScale(index);
+            const colorTempreture = globalColorScale(flow[i].attributes.TEMPERATUR);
+
+            const radius = globalThicknessScale(flow[i].attributes.SOLDIERS);
+
+            //material = new THREE.MeshLambertMaterial({opacity: 1,transparent: true,  color: color });
+
+            const pathMaterial = new THREE.LineBasicMaterial({ color: colorTempreture }); // 蓝色路径
+            const pathGeometry = new THREE.BufferGeometry().setFromPoints(path.getPoints(10));
+            const pathLine = new THREE.Line(pathGeometry, pathMaterial);
+
+            glScene.add(pathLine);
+            segments.push(pathLine);
+
+            const geometry = new THREE.SphereGeometry(20);
+            const material= new THREE.MeshLambertMaterial({ color: color });
+            const troopDot = new THREE.Mesh(geometry, material);
+            troopDot.visible = false;
+            glScene.add(troopDot);
+            segments.push(troopDot);
+
+            const timeStart = globalTimeScale(flow[i].attributes.DATA);
+            const timeEnd =  globalTimeScale(flow[i+1].attributes.DATA);
+
+            troopsSegments.push({
+                troopMesh : troopDot,
+                path: path,
+                time: [timeStart , timeEnd]
+            })
+
+        }
+
+        return segments;
+    });
+
+    resetLayerControls(true);
+
+    function projectGeoPointsTo3D(stop) {
+        var pointOrigin = {x: 0, y: 0};
+
+        var point_center = theMap.project(new mapboxgl.LngLat(map_center.lng, map_center.lat));
+
+        var point = new THREE.Vector3(0, 0, 0);
+
+        //project => (lng, lat)
+        var temp_point = theMap.project(new mapboxgl.LngLat(stop.geometry.x, stop.geometry.y));
+
+        point.x = temp_point.x - pointOrigin.x - map_length / 2;
+        point.y = 2 * point_center.y - temp_point.y - pointOrigin.y - map_width / 2;
+        point.z = globalZAxisScale(stop.attributes.DATA);
+        //point.z = 2;
+
+        return point;
+    }
+
+}
+
 //animation
 
 function updateObjects(date) {
@@ -1056,16 +1244,6 @@ function togglePlayPause() {
     document.getElementById("playPauseButton").textContent = isPlaying ? "Pause" : "Play";
     if (isPlaying) startAnimation();
 }
-
-
-
-function animate() {
-    requestAnimationFrame(animate);
-    cssRenderer.render(cssScene, camera);
-    glRenderer.render(glScene, camera);
-}
-
-animate();
 
 
 function draw3DBaseMap() {
@@ -1315,6 +1493,12 @@ function updateVisualizationMethods(selectedMethod) {
     else if (selectedMethod == "stc_animation") {
         createFlows_STC_animation();
     }
+    else if (selectedMethod == "path_animation_2D") {
+        createFlows_path_animation_2D();
+    }
+    else if (selectedMethod == "path_animation_3D") {
+        createFlows_path_animation_3D();
+    }
 }
 
 function update() {
@@ -1323,4 +1507,34 @@ function update() {
     glRenderer.render(glScene, camera);
     requestAnimationFrame(update);
 }
+
+function animate() {
+    requestAnimationFrame(animate);
+
+    troopsSegments.forEach(function (segment, i) {
+
+        let timeStamp = (timer_army - segment.time[0]) / (segment.time[1] - segment.time[0]);
+        timeStamp = Math.max(0, Math.min(1, timeStamp));
+
+        segment.troopMesh.position.copy(segment.path.getPointAt(timeStamp));
+        segment.troopMesh.visible = (timer_army >= segment.time[0] && timer_army <= segment.time[1]);
+
+    });
+    troopTracks.forEach(function (track, i) {
+
+        const span = (track.time[1] - track.time[0])/2 +  track.time[0];
+        track.mesh.visible = ( timer_army >= span);
+
+    })
+
+    //console.log(timeSpan) 16502400000
+
+    timer_army += 0.02;  // 增加时间，模拟进程
+    //console.log(timer_army)
+    if (timer_army > 24) timer_army = 0;  // 重置时间
+
+    cssRenderer.render(cssScene, camera);
+    glRenderer.render(glScene, camera);
+}
+
 
